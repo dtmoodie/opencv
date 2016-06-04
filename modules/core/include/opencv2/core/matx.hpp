@@ -135,9 +135,13 @@ public:
 
     //! dot product computed with the default precision
     _Tp dot(const Matx<_Tp, m, n>& v) const;
+    template<typename T> _Tp dot(const Point_<T>& pt) const;
+    template<typename T> _Tp dot(const Point3_<T>& pt) const;
 
     //! dot product computed in double-precision arithmetics
     double ddot(const Matx<_Tp, m, n>& v) const;
+    template<typename T> double ddot(const Point_<T>& pt) const;
+    template<typename T> double ddot(const Point3_<T>& pt) const;
 
     //! conversion to another data type
     template<typename T2> operator Matx<T2, m, n>() const;
@@ -316,7 +320,9 @@ public:
 
     Vec(_Tp v0); //!< 1-element vector constructor
     Vec(_Tp v0, _Tp v1); //!< 2-element vector constructor
+    template<typename T> Vec(const Point_<T>& _start, const Point_<T>& end);
     Vec(_Tp v0, _Tp v1, _Tp v2); //!< 3-element vector constructor
+    template<typename T> Vec(const Point3_<T>& _start, const Point3_<T>& end);
     Vec(_Tp v0, _Tp v1, _Tp v2, _Tp v3); //!< 4-element vector constructor
     Vec(_Tp v0, _Tp v1, _Tp v2, _Tp v3, _Tp v4); //!< 5-element vector constructor
     Vec(_Tp v0, _Tp v1, _Tp v2, _Tp v3, _Tp v4, _Tp v5); //!< 6-element vector constructor
@@ -343,6 +349,8 @@ public:
       For other dimensionalities the exception is raised
     */
     Vec cross(const Vec& v) const;
+    template<typename T> Vec cross(const Vec<T, cn>& V) const;
+    template<typename T> Vec cross(const Point3_<T>& pt) const;
     //! conversion to another data type
     template<typename T2> operator Vec<T2, cn>() const;
 
@@ -652,12 +660,40 @@ _Tp Matx<_Tp, m, n>::dot(const Matx<_Tp, m, n>& M) const
     return s;
 }
 
+template<typename _Tp, int m, int n> template<typename T> inline
+_Tp Matx<_Tp, m, n>::dot(const Point_<T>& pt) const
+{
+    CV_StaticAssert(m == 2 && n == 1 || m == 1 && n == 2, "dot product with 2d point must be against 2d vector");
+    return val[0] * pt.x + val[1] * pt.y;
+}
+
+template<typename _Tp, int m, int n> template<typename T> inline
+_Tp Matx<_Tp, m, n>::dot(const Point3_<T>& pt) const
+{
+    CV_StaticAssert(m == 3 && n == 1 || m == 1 && n == 3, "dot product with 3d point must be against 3d vector");
+    return val[0] * pt.x + val[1] * pt.y + val[2] * pt.z;
+}
+
 template<typename _Tp, int m, int n> inline
 double Matx<_Tp, m, n>::ddot(const Matx<_Tp, m, n>& M) const
 {
     double s = 0;
     for( int i = 0; i < channels; i++ ) s += (double)val[i]*M.val[i];
     return s;
+}
+
+template<typename _Tp, int m, int n> template<typename T> inline
+double Matx<_Tp, m, n>::ddot(const Point_<T>& pt) const
+{
+    CV_StaticAssert(m == 2 && n == 1 || m == 1 && n == 2, "dot product with 2d point must be against 2d vector");
+    return (double)val[0] * (double)pt.x + (double)val[1] * (double)pt.y;
+}
+
+template<typename _Tp, int m, int n> template<typename T> inline
+double Matx<_Tp, m, n>::ddot(const Point3_<T>& pt) const
+{
+    CV_StaticAssert(m == 3 && n == 1 || m == 1 && n == 3, "dot product with 3d point must be against 3d vector");
+    return (double)val[0] * (double)pt.x + (double)val[1] * (double)pt.y + (double)val[2] * (double)pt.z;
 }
 
 template<typename _Tp, int m, int n> inline
@@ -916,9 +952,23 @@ template<typename _Tp, int cn> inline
 Vec<_Tp, cn>::Vec(_Tp v0, _Tp v1)
     : Matx<_Tp, cn, 1>(v0, v1) {}
 
+template<typename _Tp, int cn> template<typename T> inline
+Vec<_Tp, cn>::Vec(const Point_<T>& _start, const Point_<T>& _end)
+    : Matx<_Tp, cn, 1>(_end.x - _start.x, _end.y - _start.y)
+{
+    CV_StaticAssert(channels >= 2, "Vec should have at least 2 elements.");
+}
+
 template<typename _Tp, int cn> inline
 Vec<_Tp, cn>::Vec(_Tp v0, _Tp v1, _Tp v2)
     : Matx<_Tp, cn, 1>(v0, v1, v2) {}
+
+template<typename _Tp, int cn> template<typename T> inline
+Vec<_Tp, cn>::Vec(const Point3_<T>& _start, const Point3_<T>& _end)
+    : Matx<_Tp, cn, 1>(_end.x - _start.x, _end.y - _start.y, _end.z - _start.z)
+{
+    CV_StaticAssert(channels >= 3, "Vec should have at least 3 elements.");
+}
 
 template<typename _Tp, int cn> inline
 Vec<_Tp, cn>::Vec(_Tp v0, _Tp v1, _Tp v2, _Tp v3)
@@ -1019,6 +1069,20 @@ Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Vec<_Tp, cn>&) const
     return Vec<_Tp, cn>();
 }
 
+template<typename _Tp, int cn> template<typename T> inline
+Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Vec<T, cn>& V) const
+{
+    CV_StaticAssert(cn == 3, "for arbitrary-size vector there is no cross-product defined");
+    return Vec<_Tp, cn>();
+}
+
+template<typename _Tp, int cn> template<typename T> inline
+Vec<_Tp, cn> cross(const Point3_<T>& pt) const
+{
+    CV_StaticAssert(cn == 3, "for arbitrary-size vector there is no cross-product defined");
+    return Vec<_Tp, cn>();
+}
+
 template<> inline
 Vec<float, 3> Vec<float, 3>::cross(const Vec<float, 3>& v) const
 {
@@ -1033,6 +1097,22 @@ Vec<double, 3> Vec<double, 3>::cross(const Vec<double, 3>& v) const
     return Vec<double,3>(val[1]*v.val[2] - val[2]*v.val[1],
                      val[2]*v.val[0] - val[0]*v.val[2],
                      val[0]*v.val[1] - val[1]*v.val[0]);
+}
+
+template<typename _Tp> template<typename T> inline
+Vec<_Tp, 3> Vec<_Tp, 3>::cross(const Vec<T, 3>& V) const
+{
+    return Vec<_Tp, 3>(val[1] * v.val[2] - val[2] * v.val[1],
+        val[2] * v.val[0] - val[0] * v.val[2],
+        val[0] * v.val[1] - val[1] * v.val[0]);
+}
+
+template<typename _Tp> template<typename T> inline
+Vec<_Tp, 3> cross(const Point3_<T>& pt) const
+{
+    return Vec<_Tp, 3>(val[1] * pt.z - val[2] * pt.y,
+                       val[2] * pt.x - val[0] * pt.z,
+                       val[0] * pt.y - val[1] * pt.x);
 }
 
 template<typename _Tp, int cn> template<typename T2> inline

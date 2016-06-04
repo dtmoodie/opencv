@@ -382,8 +382,12 @@ public:
     Rect_(const Rect_& r);
     Rect_(const Point_<_Tp>& org, const Size_<_Tp>& sz);
     Rect_(const Point_<_Tp>& pt1, const Point_<_Tp>& pt2);
+    template<typename T> Rect_(const Point_<T>& org, _Tp _width, _Tp _height);
+    template<typename T> Rect_(_Tp _x, _Tp _y, const Size_<T>& sz);
+    template<typename T> Rect_(const Rect_<T>& r);
 
     Rect_& operator = ( const Rect_& r );
+    template<typename T> Rect_& operator = (const Rect_<T>& r);
     //! the top-left corner
     Point_<_Tp> tl() const;
     //! the bottom-right corner
@@ -399,7 +403,8 @@ public:
 
     //! checks whether the rectangle contains the point
     bool contains(const Point_<_Tp>& pt) const;
-
+    template<typename T> bool contains(const Point_<T>& pt) const;
+    template<typename T> bool contains(const Vec<T, 2>& pt) const;
     _Tp x, y, width, height; //< the top-left corner, as well as width and height of the rectangle
 };
 
@@ -425,7 +430,40 @@ public:
     typedef Vec<channel_type, channels> vec_type;
 };
 
+template<typename _Tp> class Box_
+{
+public:
+    typedef _Tp value_type;
 
+    Box_();
+    template<typename T, typename U> Box_(const Point3_<T>& origin, const Vec<U, 3>& size);
+    template<typename T> Box_(const Box_<T>& r);
+
+    template<typename T> Box_& operator = (const Box_<T>& r);
+
+    template<typename T> bool contains(const Vec<T, 3>& pt) const;
+    template<typename T> bool contains(const Point3_<T>& pt) const;
+
+    _Tp x, y, z, width, height, depth;
+};
+
+template<typename _Tp> class DataType< Box_<_Tp> >
+{
+public:
+    typedef Box_<_Tp>                               value_type;
+    typedef Box_<typename DataType<_Tp>::work_type> work_type;
+    typedef _Tp                                      channel_type;
+
+    enum {
+        generic_type = 0,
+        depth = DataType<channel_type>::depth,
+        channels = 6,
+        fmt = DataType<channel_type>::fmt + ((channels - 1) << 8),
+        type = CV_MAKETYPE(depth, channels)
+    };
+
+    typedef Vec<channel_type, channels> vec_type;
+};
 
 ///////////////////////////// RotatedRect /////////////////////////////
 
@@ -1670,6 +1708,10 @@ template<typename _Tp> inline
 Rect_<_Tp>::Rect_(const Rect_<_Tp>& r)
     : x(r.x), y(r.y), width(r.width), height(r.height) {}
 
+template<typename _Tp> template<typename T> inline
+Rect_<_Tp>::Rect_(const Rect_<T>& r)
+    : x(r.x), y(r.y), width(r.width), height(r.height) {}
+
 template<typename _Tp> inline
 Rect_<_Tp>::Rect_(const Point_<_Tp>& org, const Size_<_Tp>& sz)
     : x(org.x), y(org.y), width(sz.width), height(sz.height) {}
@@ -1683,8 +1725,26 @@ Rect_<_Tp>::Rect_(const Point_<_Tp>& pt1, const Point_<_Tp>& pt2)
     height = std::max(pt1.y, pt2.y) - y;
 }
 
+template<typename _Tp> template<typename T> inline
+Rect_<_Tp>::Rect_(const Point_<T>& org, _Tp _width, _Tp _height)
+    : x(org.x), y(org.y), width(_width), height(_height){}
+
+template<typename _Tp> template<typename T> inline
+Rect_<_Tp>::Rect_(_Tp _x, _Tp _y, const Size_<T>& _sz)
+    : x(_x), y(_y), width(_sz.width), height(_sz.height){}
+
 template<typename _Tp> inline
 Rect_<_Tp>& Rect_<_Tp>::operator = ( const Rect_<_Tp>& r )
+{
+    x = r.x;
+    y = r.y;
+    width = r.width;
+    height = r.height;
+    return *this;
+}
+
+template<typename _Tp> template<typename T> inline
+Rect_<_Tp>& Rect_<_Tp>::operator = (const Rect_<T>& r)
 {
     x = r.x;
     y = r.y;
@@ -1729,6 +1789,17 @@ bool Rect_<_Tp>::contains(const Point_<_Tp>& pt) const
     return x <= pt.x && pt.x < x + width && y <= pt.y && pt.y < y + height;
 }
 
+template<typename _Tp> template<typename T> inline
+bool Rect_<_Tp>::contains(const Point_<T>& pt) const
+{
+    return x <= pt.x && pt.x < x + width && y <= pt.y && pt.y < y + height;
+}
+
+template<typename _Tp> template<typename T> inline
+bool Rect_<_Tp>::contains(const Vec<T, 2>& pt) const
+{
+    return x <= pt.val[0] && pt.val[0] < x + width && y <= pt.val[1] && pt.val[1] < y + height;
+}
 
 template<typename _Tp> static inline
 Rect_<_Tp>& operator += ( Rect_<_Tp>& a, const Point_<_Tp>& b )
@@ -1832,6 +1903,42 @@ Rect_<_Tp> operator | (const Rect_<_Tp>& a, const Rect_<_Tp>& b)
     return c |= b;
 }
 
+////////////////////////////// Box_ //////////////////////////////
+
+template<typename _Tp>
+Box_<_Tp>::Box_()
+    : x(0), y(0), z(0), width(0), height(0), depth(0) {}
+
+template<typename _Tp> template<typename T, typename U>
+Box_<_Tp>::Box_(const Point3_<T>& origin, const Vec<U, 3>& size)
+    : x(origin.x), y(origin.y), z(origin.z), width(size[0]), height(size[1]), depth(size[2]) {}
+
+template<typename _Tp> template<typename T>
+Box_<_Tp>::Box_(const Box_<T>& r)
+    : x(r.x), y(r.y), z(r.z), width(r.width), height(r.height), depth(r.depth) {}
+
+template<typename _Tp> template<typename T>
+Box_<_Tp>& Box_<_Tp>::operator = (const Box_<T>& r)
+{
+    x = r.x;
+    y = r.y;
+    z = r.z;
+    width = r.width;
+    height = r.height;
+    depth = r.depth;
+}
+
+template<typename _Tp> template<typename T>
+bool Box_<_Tp>::contains(const Vec<T, 3>& pt) const
+{
+    return (pt[0] > x && pt[0] < x + width) && (pt[1] > y && pt[1] < y + height) && (pt[2] > z && pt[2] < z + depth);
+}
+
+template<typename _Tp> template<typename T>
+bool Box_<_Tp>::contains(const Point3_<T>& pt) const
+{
+    return (pt.x > x && pt.x < x + width) && (pt.y > y && pt.y < y + height) && (pt.z > z && pt.z < z + depth);
+}
 
 
 ////////////////////////////// RotatedRect //////////////////////////////
