@@ -320,6 +320,7 @@ public:
 
     Vec(_Tp v0); //!< 1-element vector constructor
     Vec(_Tp v0, _Tp v1); //!< 2-element vector constructor
+    template<typename T> Vec(const Vec<T, cn>& _start, const Vec<T, cn>& _end);
     template<typename T> Vec(const Point_<T>& _start, const Point_<T>& end);
     Vec(_Tp v0, _Tp v1, _Tp v2); //!< 3-element vector constructor
     template<typename T> Vec(const Point3_<T>& _start, const Point3_<T>& end);
@@ -348,7 +349,7 @@ public:
 
       For other dimensionalities the exception is raised
     */
-    Vec cross(const Vec& v) const;
+    //Vec cross(const Vec& v) const;
     template<typename T> Vec cross(const Vec<T, cn>& V) const;
     template<typename T> Vec cross(const Point3_<T>& pt) const;
     //! conversion to another data type
@@ -953,6 +954,10 @@ Vec<_Tp, cn>::Vec(_Tp v0, _Tp v1)
     : Matx<_Tp, cn, 1>(v0, v1) {}
 
 template<typename _Tp, int cn> template<typename T> inline
+Vec<_Tp, cn>::Vec(const Vec<T, cn>& _start, const Vec<T, cn>& _end)
+    :Matx<_Tp, cn, 1>(_end - _start){}
+
+template<typename _Tp, int cn> template<typename T> inline
 Vec<_Tp, cn>::Vec(const Point_<T>& _start, const Point_<T>& _end)
     : Matx<_Tp, cn, 1>(_end.x - _start.x, _end.y - _start.y)
 {
@@ -1062,12 +1067,12 @@ Vec<double, 4> Vec<double, 4>::conj() const
     return cv::internal::conjugate(*this);
 }
 
-template<typename _Tp, int cn> inline
+/*template<typename _Tp, int cn> inline
 Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Vec<_Tp, cn>&) const
 {
     CV_StaticAssert(cn == 3, "for arbitrary-size vector there is no cross-product defined");
     return Vec<_Tp, cn>();
-}
+}*/
 
 template<typename _Tp, int cn> template<typename T> inline
 Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Vec<T, cn>& V) const
@@ -1077,40 +1082,40 @@ Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Vec<T, cn>& V) const
 }
 
 template<typename _Tp, int cn> template<typename T> inline
-Vec<_Tp, cn> cross(const Point3_<T>& pt) const
+Vec<_Tp, cn> Vec<_Tp, cn>::cross(const Point3_<T>& pt) const
 {
     CV_StaticAssert(cn == 3, "for arbitrary-size vector there is no cross-product defined");
     return Vec<_Tp, cn>();
 }
 
-template<> inline
-Vec<float, 3> Vec<float, 3>::cross(const Vec<float, 3>& v) const
+template<> template<typename T> inline
+Vec<float, 3> Vec<float, 3>::cross(const Vec<T, 3>& v) const
 {
     return Vec<float,3>(this->val[1]*v.val[2] - this->val[2]*v.val[1],
                      this->val[2]*v.val[0] - this->val[0]*v.val[2],
                      this->val[0]*v.val[1] - this->val[1]*v.val[0]);
 }
 
-template<> inline
-Vec<double, 3> Vec<double, 3>::cross(const Vec<double, 3>& v) const
+template<> template<typename T> inline
+Vec<double, 3> Vec<double, 3>::cross(const Vec<T, 3>& v) const
 {
     return Vec<double,3>(this->val[1]*v.val[2] - this->val[2]*v.val[1],
-                     this->val[2]*v.val[0] - this->val[0]*v.val[2],
-                     this->val[0]*v.val[1] - this->val[1]*v.val[0]);
+                         this->val[2]*v.val[0] - this->val[0]*v.val[2],
+                         this->val[0]*v.val[1] - this->val[1]*v.val[0]);
 }
 
-template<typename _Tp> template<typename T> inline
-Vec<_Tp, 3> Vec<_Tp, 3>::cross(const Vec<T, 3>& V) const
+template<> template<typename T> inline
+Vec<float, 3> Vec<float, 3>::cross(const Point3_<T>& pt) const
 {
-    return Vec<_Tp, 3>(val[1] * v.val[2] - val[2] * v.val[1],
-        val[2] * v.val[0] - val[0] * v.val[2],
-        val[0] * v.val[1] - val[1] * v.val[0]);
+    return Vec<float, 3>(val[1] * pt.z - val[2] * pt.y,
+        val[2] * pt.x - val[0] * pt.z,
+        val[0] * pt.y - val[1] * pt.x);
 }
 
-template<typename _Tp> template<typename T> inline
-Vec<_Tp, 3> cross(const Point3_<T>& pt) const
+template<> template<typename T> inline
+Vec<double, 3> Vec<double, 3>::cross(const Point3_<T>& pt) const
 {
-    return Vec<_Tp, 3>(val[1] * pt.z - val[2] * pt.y,
+    return Vec<double, 3>(val[1] * pt.z - val[2] * pt.y,
                        val[2] * pt.x - val[0] * pt.z,
                        val[0] * pt.y - val[1] * pt.x);
 }
