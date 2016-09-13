@@ -140,8 +140,8 @@ std::map<int, ExifEntry_t > ExifReader::getExif()
         return m_exif; //Until this moment the map is empty
     }
 
-    bool exifFound = false;
-    while( ( !feof( f ) ) && !exifFound )
+    bool exifFound = false, stopSearch = false;
+    while( ( !feof( f ) ) && !exifFound && !stopSearch )
     {
         count = fread( appMarker, sizeof(unsigned char), markerSize, f );
         if( count < markerSize )
@@ -170,6 +170,7 @@ std::map<int, ExifEntry_t > ExifReader::getExif()
             case APP1: //actual Exif Marker
                 exifSize = getFieldSize(f);
                 if (exifSize <= offsetToTiffHeader) {
+                    fclose(f);
                     throw ExifParsingError();
                 }
                 m_data.resize( exifSize - offsetToTiffHeader );
@@ -179,6 +180,7 @@ std::map<int, ExifEntry_t > ExifReader::getExif()
                 break;
 
             default: //No other markers are expected according to standard. May be a signal of error
+                stopSearch = true;
                 break;
         }
     }

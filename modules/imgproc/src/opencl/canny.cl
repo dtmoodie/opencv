@@ -260,7 +260,7 @@ __kernel void stage1_with_sobel(__global const uchar *src, int src_step, int src
 #ifdef L2GRAD
 #define dist(x, y) ((int)(x) * (x) + (int)(y) * (y))
 #else
-#define dist(x, y) (abs(x) + abs(y))
+#define dist(x, y) (abs((int)(x)) + abs((int)(y)))
 #endif
 
 __constant int prev[4][2] = {
@@ -428,6 +428,7 @@ __kernel void stage2_hysteresis(__global uchar *map_ptr, int map_step, int map_o
         int mod = l_counter % LOCAL_TOTAL;
         int pix_per_thr = l_counter / LOCAL_TOTAL + ((lid < mod) ? 1 : 0);
 
+        barrier(CLK_LOCAL_MEM_FENCE);
         for (int i = 0; i < pix_per_thr; ++i)
         {
             int index = atomic_dec(&l_counter) - 1;
