@@ -41,6 +41,9 @@
 //M*/
 
 #include "precomp.hpp"
+#include <opencv2/core/cuda/thrust_allocator.hpp>
+#include <opencv2/cudev/common.hpp>
+#include <map>
 
 using namespace cv;
 using namespace cv::cuda;
@@ -537,14 +540,17 @@ namespace
 {
     bool enableMemoryPool = true;
 
-    class StackAllocator : public GpuMat::Allocator
+    class StackAllocator : public GpuMat::Allocator, public cv::cuda::device::ThrustAllocator
     {
     public:
+        typedef uchar value_type;
         explicit StackAllocator(cudaStream_t stream);
         ~StackAllocator();
 
         bool allocate(GpuMat* mat, int rows, int cols, size_t elemSize);
         void free(GpuMat* mat);
+        uchar* allocate(size_t numBytes);
+        void deallocate(uchar* ptr, size_t numBytes);
 
     private:
         StackAllocator(const StackAllocator&);
@@ -621,6 +627,26 @@ namespace
         memStack_->returnMemory(mat->datastart);
         fastFree(mat->refcount);
     }
+    uchar* StackAllocator::allocate(size_t numBytes)
+    {
+        if (memStack_ == 0)
+            return 0;
+        
+        uchar* ptr = memStack_->requestMemory(numBytes);
+
+        if (ptr == 0)
+            return 0;
+
+        return ptr;
+    }
+
+    void StackAllocator::deallocate(uchar* ptr, size_t numBytes)
+    {
+        if (memStack_ == 0)
+            return;
+
+        memStack_->returnMemory(ptr);
+    }
 }
 
 #endif
@@ -681,6 +707,54 @@ GpuMat cv::cuda::BufferPool::getBuffer(int rows, int cols, int type)
     return buf;
 }
 
+device::ThrustAllocator::~ThrustAllocator()
+{
+}
+namespace
+{
+    class DefaultThrustAllocator : public cv::cuda::device::ThrustAllocator
+    {
+    public:
+        uchar* allocate(size_t numBytes)
+        {
+#ifndef __CUDA_ARCH__
+            uchar* ptr;
+            CV_CUDEV_SAFE_CALL(cudaMalloc(&ptr, numBytes));
+            return ptr;
+#else
+            return NULL;
+#endif
+        }
+        void deallocate(uchar* ptr, size_t numBytes)
+        {
+            (void)numBytes;
+#ifndef __CUDA_ARCH__
+            CV_CUDEV_SAFE_CALL(cudaFree(ptr));
+#endif
+        }
+    };
+    DefaultThrustAllocator defaultThrustAllocator;
+    std::map<cudaStream_t, cv::cuda::device::ThrustAllocator*> g_thrustAllocators;
+}
+
+
+cv::cuda::device::ThrustAllocator& cv::cuda::device::ThrustAllocator::getAllocator(const Stream& stream)
+{
+    std::map<cudaStream_t, cv::cuda::device::ThrustAllocator*>::iterator itr = g_thrustAllocators.find(StreamAccessor::getStream(stream));
+    if (itr != g_thrustAllocators.end())
+    {
+        return *itr->second;
+    }
+    return *stream.impl_->stackAllocator.get();
+}
+
+void cv::cuda::device::ThrustAllocator::setAllocator(cv::cuda::device::ThrustAllocator* allocator, const Stream& stream)
+{
+    if (allocator == NULL)
+        g_thrustAllocators[StreamAccessor::getStream(stream)] = &defaultThrustAllocator;
+    else
+        g_thrustAllocators[StreamAccessor::getStream(stream)] = allocator;
+}
 #endif
 
 ////////////////////////////////////////////////////////////////

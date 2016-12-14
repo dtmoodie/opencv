@@ -668,6 +668,7 @@ foreach(hal ${OpenCV_HAL})
   endif()
 endforeach()
 configure_file("${OpenCV_SOURCE_DIR}/cmake/templates/custom_hal.hpp.in" "${CMAKE_BINARY_DIR}/custom_hal.hpp" @ONLY)
+include_directories(${CMAKE_BINARY_DIR})
 unset(_hal_includes)
 
 

@@ -55,7 +55,7 @@ namespace cv { namespace cuda { namespace device
 {
     namespace orb
     {
-        int cull_gpu(int* loc, float* response, int size, int n_points, cudaStream_t stream);
+        int cull_gpu(int* loc, float* response, int size, int n_points, Stream& stream);
 
         void HarrisResponses_gpu(PtrStepSzb img, const short2* loc, float* response, const int npoints, int blockSize, float harris_k, cudaStream_t stream);
 
@@ -732,7 +732,7 @@ namespace
                 return;
             }
 
-            count = cull_gpu(keypoints.ptr<int>(cuda::FastFeatureDetector::LOCATION_ROW), keypoints.ptr<float>(cuda::FastFeatureDetector::RESPONSE_ROW), count, n_points, StreamAccessor::getStream(stream));
+            count = cull_gpu(keypoints.ptr<int>(cuda::FastFeatureDetector::LOCATION_ROW), keypoints.ptr<float>(cuda::FastFeatureDetector::RESPONSE_ROW), count, n_points, stream);
         }
     }
 

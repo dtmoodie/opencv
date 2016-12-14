@@ -63,7 +63,9 @@
  */
 
 namespace cv { namespace cuda {
-
+    namespace device{
+        class ThrustAllocator;
+    }
 //! @addtogroup cudacore_struct
 //! @{
 
@@ -516,6 +518,7 @@ private:
     friend struct StreamAccessor;
     friend class BufferPool;
     friend class DefaultDeviceInitializer;
+    friend class device::ThrustAllocator;
 };
 
 class CV_EXPORTS Event

@@ -56,7 +56,7 @@ namespace cv { namespace cuda { namespace device
     namespace gfft
     {
         int findCorners_gpu(PtrStepSzf eig, float threshold, PtrStepSzb mask, float2* corners, int max_count, cudaStream_t stream);
-        void sortCorners_gpu(PtrStepSzf eig, float2* corners, int count, cudaStream_t stream);
+        void sortCorners_gpu(PtrStepSzf eig, float2* corners, int count, Stream& stream);
     }
 }}}
 
@@ -120,7 +120,7 @@ namespace
             return;
         }
 
-        sortCorners_gpu(eig_, tmpCorners_.ptr<float2>(), total, stream_);
+        sortCorners_gpu(eig_, tmpCorners_.ptr<float2>(), total, stream);
 
         if (minDistance_ < 1)
         {
