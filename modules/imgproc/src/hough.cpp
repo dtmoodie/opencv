@@ -973,7 +973,7 @@ void HoughLinesPointSet( InputArray _point, OutputArray _lines, int lines_max, i
 
 struct EstimatedCircle
 {
-    EstimatedCircle(Vec3f _c, int _accum) :
+    EstimatedCircle(Vec3f _c = cv::Vec3f(), int _accum = 0) :
         c(_c), accum(_accum) {}
     Vec3f c;
     int accum;
@@ -1280,6 +1280,22 @@ static bool CheckDistance(const std::vector<Vec3f> &circles, size_t endIdx, cons
     return goodPoint;
 }
 
+static bool CheckDistance(const std::vector<EstimatedCircle> &circles, size_t endIdx, const Vec3f& circle, float minDist2)
+{
+    bool goodPoint = true;
+    for (uint j = 0; j < endIdx; ++j)
+    {
+        Vec3f pt = circles[j].c;
+        float distX = circle[0] - pt[0], distY = circle[1] - pt[1];
+        if (distX * distX + distY * distY < minDist2)
+        {
+            goodPoint = false;
+            break;
+        }
+    }
+    return goodPoint;
+}
+
 static void GetCircleCenters(const std::vector<int> &centers, std::vector<Vec3f> &circles, int acols, float minDist, float dr)
 {
     size_t centerCnt = centers.size();
@@ -1297,16 +1313,16 @@ static void GetCircleCenters(const std::vector<int> &centers, std::vector<Vec3f>
     }
 }
 
-static void RemoveOverlaps(std::vector<Vec3f>& circles, float minDist)
+static void RemoveOverlaps(std::vector<EstimatedCircle>& circles, float minDist)
 {
     float minDist2 = minDist * minDist;
     size_t endIdx = 1;
     for (size_t i = 1; i < circles.size(); ++i)
     {
-        Vec3f circle = circles[i];
+        Vec3f circle = circles[i].c;
         if (CheckDistance(circles, endIdx, circle, minDist2))
         {
-            circles[endIdx] = circle;
+            circles[endIdx] = circles[i];
             ++endIdx;
         }
     }
@@ -1556,7 +1572,7 @@ inline int HoughCircleEstimateRadiusInvoker<NZPointSet>::filterCircles(const Poi
     return nzCount;
 }
 
-static void HoughCirclesGradient(InputArray _image, OutputArray _circles, float dp, float minDist,
+static void HoughCirclesGradient(InputArray _image, OutputArray _circles, OutputArray confidence, float dp, float minDist,
                                  int minRadius, int maxRadius, int cannyThreshold,
                                  int accThreshold, int maxCircles, int kernelSize, bool centersOnly)
 {
@@ -1635,8 +1651,17 @@ static void HoughCirclesGradient(InputArray _image, OutputArray _circles, float 
 
         // Sort by accumulator value
         std::sort(circlesEst.begin(), circlesEst.end(), cmpAccum);
+        RemoveOverlaps(circlesEst, minDist);
         std::transform(circlesEst.begin(), circlesEst.end(), std::back_inserter(circles), GetCircle);
-        RemoveOverlaps(circles, minDist);
+        if(confidence.needed() && !circlesEst.empty())
+        {
+            confidence.create(1, std::min(maxCircles, int(circlesEst.size())), CV_32S);
+            cv::Mat conf_mat = confidence.getMat();
+            for(size_t i = 0; i < circlesEst.size(); ++i)
+            {
+                conf_mat.at<int>(i) = circlesEst[i].accum;
+            }
+        }
     }
 
     if(circles.size() > 0)
@@ -1648,7 +1673,7 @@ static void HoughCirclesGradient(InputArray _image, OutputArray _circles, float 
     }
 }
 
-static void HoughCircles( InputArray _image, OutputArray _circles,
+static void HoughCircles( InputArray _image, OutputArray _circles, OutputArray confidence,
                           int method, double dp, double minDist,
                           double param1, double param2,
                           int minRadius, int maxRadius,
@@ -1679,7 +1704,7 @@ static void HoughCircles( InputArray _image, OutputArray _circles,
     switch( method )
     {
     case CV_HOUGH_GRADIENT:
-        HoughCirclesGradient(_image, _circles, (float)dp, (float)minDist,
+        HoughCirclesGradient(_image, _circles, confidence, (float)dp, (float)minDist,
                              minRadius, maxRadius, cannyThresh,
                              accThresh, maxCircles, kernelSize, centersOnly);
         break;
@@ -1693,8 +1718,17 @@ void HoughCircles( InputArray _image, OutputArray _circles,
                    double param1, double param2,
                    int minRadius, int maxRadius )
 {
-    HoughCircles(_image, _circles, method, dp, minDist, param1, param2, minRadius, maxRadius, -1, 3);
+    HoughCircles(_image, _circles, cv::noArray(), method, dp, minDist, param1, param2, minRadius, maxRadius, -1, 3);
 }
+
+void HoughCircles( InputArray image, OutputArray circles, OutputArray confidence,
+                               int method, double dp, double minDist,
+                               double param1, double param2,
+                               int minRadius, int maxRadius)
+{
+    HoughCircles(image, circles, confidence, method, dp, minDist, param1, param2, minRadius, maxRadius, -1, 3);
+}
+
 } // \namespace cv
 
 
@@ -1848,7 +1882,7 @@ cvHoughCircles( CvArr* src_image, void* circle_storage,
         cvClearSeq( circles );
     }
 
-    cv::HoughCircles(src, circles_mat, method, dp, min_dist, param1, param2, min_radius, max_radius, circles_max, 3);
+    cv::HoughCircles(src, circles_mat, cv::noArray(), method, dp, min_dist, param1, param2, min_radius, max_radius, circles_max, 3);
     cvSeqPushMulti(circles, circles_mat.data, (int)circles_mat.total());
     return circles;
 }

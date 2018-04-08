@@ -2169,7 +2169,11 @@ CV_EXPORTS_W void HoughCircles( InputArray image, OutputArray circles,
                                int method, double dp, double minDist,
                                double param1 = 100, double param2 = 100,
                                int minRadius = 0, int maxRadius = 0 );
-
+/** @overload */
+CV_EXPORTS_W void HoughCircles( InputArray image, OutputArray circles, OutputArray confidence,
+                               int method, double dp, double minDist,
+                               double param1 = 100, double param2 = 100,
+                               int minRadius = 0, int maxRadius = 0 );
 //! @} imgproc_feature
 
 //! @addtogroup imgproc_filter
