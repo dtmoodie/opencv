@@ -698,9 +698,11 @@ endmacro()
 # setup include path for OpenCV headers for specified module
 # ocv_module_include_directories(<extra include directories/extra include modules>)
 macro(ocv_module_include_directories)
+  if(ENABLE_PRECOMPILED_HEADERS OR OPENCV_INCLUDE_DIR_APPEND_MODULE_SRC)
+    ocv_target_include_directories(${the_module} "${OPENCV_MODULE_${the_module}_LOCATION}/src")
+  endif()
   ocv_target_include_directories(${the_module}
       "${OPENCV_MODULE_${the_module}_LOCATION}/include"
-      "${OPENCV_MODULE_${the_module}_LOCATION}/src"
       "${CMAKE_CURRENT_BINARY_DIR}" # for precompiled headers
       )
   ocv_target_include_modules(${the_module} ${OPENCV_MODULE_${the_module}_DEPS} ${ARGN})
@@ -747,13 +749,17 @@ endmacro()
 
 # finds and sets headers and sources for the standard OpenCV module
 # Usage:
-# ocv_glob_module_sources([EXCLUDE_CUDA] <extra sources&headers in the same format as used in ocv_set_module_sources>)
+# ocv_glob_module_sources([EXCLUDE_CUDA] [EXCLUDE_OPENCL] <extra sources&headers in the same format as used in ocv_set_module_sources>)
 macro(ocv_glob_module_sources)
   ocv_debug_message("ocv_glob_module_sources(" ${ARGN} ")")
   set(_argn ${ARGN})
   list(FIND _argn "EXCLUDE_CUDA" exclude_cuda)
   if(NOT exclude_cuda EQUAL -1)
     list(REMOVE_AT _argn ${exclude_cuda})
+  endif()
+  list(FIND _argn "EXCLUDE_OPENCL" exclude_opencl)
+  if(NOT exclude_opencl EQUAL -1)
+    list(REMOVE_AT _argn ${exclude_opencl})
   endif()
 
   file(GLOB_RECURSE lib_srcs
@@ -801,7 +807,7 @@ macro(ocv_glob_module_sources)
   file(GLOB cl_kernels
        "${CMAKE_CURRENT_LIST_DIR}/src/opencl/*.cl"
   )
-  if(cl_kernels)
+  if(cl_kernels AND exclude_opencl EQUAL -1)
     set(OCL_NAME opencl_kernels_${name})
     add_custom_command(
       OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${OCL_NAME}.cpp"  # don't add .hpp file here to optimize build process

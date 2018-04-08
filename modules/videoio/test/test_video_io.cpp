@@ -112,6 +112,13 @@ public:
 
         {
             SCOPED_TRACE("consecutive read");
+            if (apiPref == CAP_GSTREAMER)
+            {
+                // This workaround is for GStreamer 1.3.1.1 and older.
+                // Old Gstreamer has a bug which handles the total duration 1 frame shorter
+                // Old Gstreamer are used in Ubuntu 14.04, so the following code could be removed after it's EOL
+                n_frames--;
+            }
             for (int k = 0; k < n_frames; ++k)
             {
                 checkFrameRead(k, cap);
@@ -368,8 +375,7 @@ Ext_Fourcc_PSNR synthetic_params[] = {
 #endif
     makeParam("wmv", "WMV3", 30.f, CAP_MSMF),
     makeParam("wmv", "WVC1", 30.f, CAP_MSMF),
-    makeParam("avi", "H264", 30.f, CAP_MSMF),
-    makeParam("avi", "MJPG", 30.f, CAP_MSMF),
+    makeParam("mov", "H264", 30.f, CAP_MSMF),
 #endif
 
 #ifdef HAVE_VFW

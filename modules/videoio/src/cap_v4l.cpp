@@ -265,7 +265,7 @@ struct buffer
 
 static unsigned int n_buffers = 0;
 
-struct CvCaptureCAM_V4L : public CvCapture
+struct CvCaptureCAM_V4L CV_FINAL : public CvCapture
 {
     int deviceHandle;
     int bufferIndex;
@@ -301,10 +301,10 @@ struct CvCaptureCAM_V4L : public CvCapture
    bool open(int _index);
    bool open(const char* deviceName);
 
-   virtual double getProperty(int) const;
-   virtual bool setProperty(int, double);
-   virtual bool grabFrame();
-   virtual IplImage* retrieveFrame(int);
+   virtual double getProperty(int) const CV_OVERRIDE;
+   virtual bool setProperty(int, double) CV_OVERRIDE;
+   virtual bool grabFrame() CV_OVERRIDE;
+   virtual IplImage* retrieveFrame(int) CV_OVERRIDE;
 
    Range getRange(int property_id) const {
        switch (property_id) {
@@ -911,7 +911,7 @@ static int mainloop_v4l2(CvCaptureCAM_V4L* capture) {
             if(returnCode == -1)
                 return -1;
             if(returnCode == 1)
-                break;
+                return 1;
         }
     }
     return 0;
@@ -956,7 +956,7 @@ static bool icvGrabFrameCAM_V4L(CvCaptureCAM_V4L* capture) {
 #if defined(V4L_ABORT_BADJPEG)
         // skip first frame. it is often bad -- this is unnotied in traditional apps,
         //  but could be fatal if bad jpeg is enabled
-        if(mainloop_v4l2(capture) == -1)
+        if(mainloop_v4l2(capture) != 1)
                 return false;
 #endif
 
@@ -964,7 +964,7 @@ static bool icvGrabFrameCAM_V4L(CvCaptureCAM_V4L* capture) {
       capture->FirstCapture = 0;
    }
 
-   if(mainloop_v4l2(capture) == -1) return false;
+   if(mainloop_v4l2(capture) != 1) return false;
 
    return true;
 }

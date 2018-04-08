@@ -59,7 +59,7 @@ ocv_create_module(${extra_libs})
 
 ocv_target_link_libraries(${the_module} LINK_PRIVATE
     "${ZLIB_LIBRARIES}" "${OPENCL_LIBRARIES}" "${VA_LIBRARIES}"
-    "${LAPACK_LIBRARIES}" "${CPUFEATURES_LIBRARIES}" "${HALIDE_LIBRARIES}" "${INF_ENGINE_LIBRARIES}"
+    "${LAPACK_LIBRARIES}" "${CPUFEATURES_LIBRARIES}" "${HALIDE_LIBRARIES}"
     "${ITT_LIBRARIES}"
     "${OPENCV_HAL_LINKER_LIBS}"
 )
@@ -70,3 +70,5 @@ endif()
 
 ocv_add_accuracy_tests()
 ocv_add_perf_tests()
+
+ocv_install_3rdparty_licenses(SoftFloat "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SoftFloat/COPYING.txt")

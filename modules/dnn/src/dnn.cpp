@@ -53,6 +53,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <opencv2/core/utils/configuration.private.hpp>
+#include <opencv2/core/utils/logger.hpp>
 
 namespace cv {
 namespace dnn {
@@ -282,12 +283,12 @@ public:
     ~OpenCLBackendWrapper() {}
 
     // Copies data from device to a host memory.
-    virtual void copyToHost()
+    virtual void copyToHost() CV_OVERRIDE
     {
         umat.copyTo(*host);
     }
 
-    virtual void setHostDirty()
+    virtual void setHostDirty() CV_OVERRIDE
     {
         hostDirty = true;
     };
@@ -394,11 +395,11 @@ struct LayerData
 //fake layer containing network input blobs
 struct DataLayer : public Layer
 {
-    void finalize(const std::vector<Mat*>&, std::vector<Mat>&) {}
-    void forward(std::vector<Mat*>&, std::vector<Mat>&, std::vector<Mat> &) {}
-    void forward(InputArrayOfArrays inputs, OutputArrayOfArrays outputs, OutputArrayOfArrays internals) {}
+    void finalize(const std::vector<Mat*>&, std::vector<Mat>&) CV_OVERRIDE {}
+    void forward(std::vector<Mat*>&, std::vector<Mat>&, std::vector<Mat> &) CV_OVERRIDE {}
+    void forward(InputArrayOfArrays inputs, OutputArrayOfArrays outputs, OutputArrayOfArrays internals) CV_OVERRIDE {}
 
-    int outputNameToIndex(String tgtName)
+    int outputNameToIndex(const String& tgtName) CV_OVERRIDE
     {
         int idx = (int)(std::find(outNames.begin(), outNames.end(), tgtName) - outNames.begin());
         return (idx < (int)outNames.size()) ? idx : -1;
@@ -412,14 +413,13 @@ struct DataLayer : public Layer
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
                          const int requiredOutputs,
                          std::vector<MatShape> &outputs,
-                         std::vector<MatShape> &internals) const
+                         std::vector<MatShape> &internals) const CV_OVERRIDE
     {
         CV_Assert(inputs.size() == requiredOutputs);
         outputs.assign(inputs.begin(), inputs.end());
         return false;
     }
 
-private:
     std::vector<String> outNames;
 };
 
@@ -699,10 +699,10 @@ struct Net::Impl
         fusion = true;
         preferableBackend = DNN_BACKEND_DEFAULT;
         preferableTarget = DNN_TARGET_CPU;
+        skipInfEngineInit = false;
     }
 
     Ptr<DataLayer> netInputLayer;
-    std::vector<int> netOutputs;
     std::vector<LayerPin> blobsToKeep;
     MapIdToLayerData layers;
     std::map<String, int> layerNameToId;
@@ -710,6 +710,7 @@ struct Net::Impl
     int preferableBackend;
     int preferableTarget;
     String halideConfigFile;
+    bool skipInfEngineInit;
     // Map host data to backend specific wrapper.
     std::map<void*, Ptr<BackendWrapper> > backendWrappers;
 
@@ -846,10 +847,16 @@ struct Net::Impl
 
         if (!netWasAllocated || this->blobsToKeep != blobsToKeep_)
         {
+#ifndef HAVE_OPENCL
+            if (preferableBackend == DNN_BACKEND_DEFAULT && preferableTarget == DNN_TARGET_OPENCL)
+            {
+                CV_LOG_WARNING(NULL, "DNN: OpenCL target is not available in this OpenCV build, switching to CPU.")
+                preferableTarget = DNN_TARGET_CPU;
+            }
+#endif
             clear();
 
             allocateLayers(blobsToKeep_);
-            computeNetOutputLayers();
             initBackend();
 
             if (!netWasAllocated )
@@ -1011,29 +1018,6 @@ struct Net::Impl
         ldOut.consumers.push_back(LayerPin(inLayerId, outNum));
     }
 
-    void computeNetOutputLayers()
-    {
-        CV_TRACE_FUNCTION();
-
-        netOutputs.clear();
-
-        MapIdToLayerData::iterator it;
-        for (it = layers.begin(); it != layers.end(); it++)
-        {
-            int lid = it->first;
-            LayerData &ld = it->second;
-
-            if (ld.requiredOutputs.size() == 0)
-                netOutputs.push_back(lid);
-        }
-
-        #ifndef NDEBUG
-        std::cout << "\nNet Outputs(" << netOutputs.size() << "):\n";
-        for (size_t i = 0; i < netOutputs.size(); i++)
-            std::cout << layers[netOutputs[i]].name << "\n";
-        #endif
-    }
-
     void initBackend()
     {
         CV_TRACE_FUNCTION();
@@ -1142,14 +1126,42 @@ struct Net::Impl
 
     void initInfEngineBackend()
     {
-        // Build Inference Engine networks from sets of layers that support this
-        // backend. Split a whole model on several Inference Engine networks if
-        // some of layers is not implemented.
         CV_TRACE_FUNCTION();
         CV_Assert(preferableBackend == DNN_BACKEND_INFERENCE_ENGINE, haveInfEngine());
 #ifdef HAVE_INF_ENGINE
         MapIdToLayerData::iterator it;
         Ptr<InfEngineBackendNet> net;
+
+        if (skipInfEngineInit)
+        {
+            Ptr<BackendNode> node = layers[lastLayerId].backendNodes[preferableBackend];
+            CV_Assert(!node.empty());
+
+            Ptr<InfEngineBackendNode> ieNode = node.dynamicCast<InfEngineBackendNode>();
+            CV_Assert(!ieNode.empty());
+
+            for (it = layers.begin(); it != layers.end(); ++it)
+            {
+                LayerData &ld = it->second;
+
+                for (int i = 0; i < ld.outputBlobsWrappers.size(); ++i)
+                {
+                    InferenceEngine::DataPtr dataPtr = infEngineDataNode(ld.outputBlobsWrappers[i]);
+                    dataPtr->name = ld.id == 0 ? netInputLayer->outNames[i] : ld.name;
+                }
+                ieNode->net->addBlobs(ld.inputBlobsWrappers);
+                ieNode->net->addBlobs(ld.outputBlobsWrappers);
+                ld.skip = true;
+            }
+            layers[lastLayerId].skip = false;
+            ieNode->net->init();
+            return;
+        }
+
+        // Build Inference Engine networks from sets of layers that support this
+        // backend. Split a whole model on several Inference Engine networks if
+        // some of layers is not implemented.
+
         // Set of all input and output blobs wrappers for current network.
         std::map<int, Ptr<BackendWrapper> > netBlobsWrappers;
         for (it = layers.begin(); it != layers.end(); ++it)
@@ -1264,7 +1276,7 @@ struct Net::Impl
 
             if (!ieNode->net->isInitialized())
             {
-                ieNode->net->initEngine();
+                ieNode->net->init();
                 ld.skip = false;
             }
         }
@@ -1375,7 +1387,6 @@ struct Net::Impl
 
         // scan through all the layers. If there is convolution layer followed by the activation layer,
         // we try to embed this activation into the convolution and disable separate execution of the activation
-        std::vector<String> outnames;
         std::set<LayerPin> pinsToKeep(blobsToKeep_.begin(),
                                       blobsToKeep_.end());
         MapIdToLayerData::iterator it;
@@ -1389,8 +1400,6 @@ struct Net::Impl
                 continue;
             }
             printf_(("analyzing %s: %s\n", ld.layerInstance->name.c_str(), ld.layerInstance->type.c_str()));
-            if( ld.consumers.size() == 0 )
-                outnames.push_back(ld.layerInstance->name);
 
             // the optimization #1. try to fuse batch norm, scaling and/or activation layers
             // with the current layer if they follow it. Normally, the are fused with the convolution layer,
@@ -1902,6 +1911,46 @@ struct Net::Impl
 
 Net::Net() : impl(new Net::Impl)
 {
+}
+
+Net Net::readFromModelOptimizer(const String& xml, const String& bin)
+{
+#ifndef HAVE_INF_ENGINE
+    CV_ErrorNoReturn(Error::StsError, "Build OpenCV with Inference Engine to enable loading models from Model Optimizer.");
+#else
+    InferenceEngine::CNNNetReader reader;
+    reader.ReadNetwork(xml);
+    reader.ReadWeights(bin);
+
+    InferenceEngine::CNNNetwork ieNet = reader.getNetwork();
+
+    std::vector<String> inputsNames;
+    for (auto& it : ieNet.getInputsInfo())
+    {
+        inputsNames.push_back(it.first);
+    }
+
+    Net cvNet;
+    cvNet.setInputsNames(inputsNames);
+
+    Ptr<InfEngineBackendNode> backendNode(new InfEngineBackendNode(0));
+    backendNode->net = Ptr<InfEngineBackendNet>(new InfEngineBackendNet(ieNet));
+    for (auto& it : ieNet.getOutputsInfo())
+    {
+        LayerParams lp;
+        int lid = cvNet.addLayer(it.first, "", lp);
+
+        LayerData& ld = cvNet.impl->layers[lid];
+        ld.layerInstance = Ptr<Layer>(new InfEngineBackendLayer(it.second));
+        ld.backendNodes[DNN_BACKEND_INFERENCE_ENGINE] = backendNode;
+
+        cvNet.connect(0, 0, lid, 0);
+    }
+    cvNet.setPreferableBackend(DNN_BACKEND_INFERENCE_ENGINE);
+
+    cvNet.impl->skipInfEngineInit = true;
+    return cvNet;
+#endif  // HAVE_INF_ENGINE
 }
 
 Net::~Net()
@@ -2513,7 +2562,7 @@ int Layer::inputNameToIndex(String)
     return -1;
 }
 
-int Layer::outputNameToIndex(String)
+int Layer::outputNameToIndex(const String&)
 {
     return -1;
 }
@@ -2804,6 +2853,55 @@ BackendWrapper::BackendWrapper(const Ptr<BackendWrapper>& base, const MatShape& 
 }
 
 BackendWrapper::~BackendWrapper() {}
+
+Net readNet(const String& _model, const String& _config, const String& _framework)
+{
+    String framework = _framework.toLowerCase();
+    String model = _model;
+    String config = _config;
+    const std::string modelExt = model.substr(model.rfind('.') + 1);
+    const std::string configExt = config.substr(config.rfind('.') + 1);
+    if (framework == "caffe" || modelExt == "caffemodel" || configExt == "caffemodel" ||
+                                modelExt == "prototxt" || configExt == "prototxt")
+    {
+        if (modelExt == "prototxt" || configExt == "caffemodel")
+            std::swap(model, config);
+        return readNetFromCaffe(config, model);
+    }
+    if (framework == "tensorflow" || modelExt == "pb" || configExt == "pb" ||
+                                     modelExt == "pbtxt" || configExt == "pbtxt")
+    {
+        if (modelExt == "pbtxt" || configExt == "pb")
+            std::swap(model, config);
+        return readNetFromTensorflow(model, config);
+    }
+    if (framework == "torch" || modelExt == "t7" || modelExt == "net" ||
+                                configExt == "t7" || configExt == "net")
+    {
+        return readNetFromTorch(model.empty() ? config : model);
+    }
+    if (framework == "darknet" || modelExt == "weights" || configExt == "weights" ||
+                                  modelExt == "cfg" || configExt == "cfg")
+    {
+        if (modelExt == "cfg" || configExt == "weights")
+            std::swap(model, config);
+        return readNetFromDarknet(config, model);
+    }
+    if (framework == "dldt" || modelExt == "bin" || configExt == "bin" ||
+                               modelExt == "xml" || configExt == "xml")
+    {
+        if (modelExt == "xml" || configExt == "bin")
+            std::swap(model, config);
+        return readNetFromModelOptimizer(config, model);
+    }
+    CV_ErrorNoReturn(Error::StsError, "Cannot determine an origin framework of files: " +
+                                      model + (config.empty() ? "" : ", " + config));
+}
+
+Net readNetFromModelOptimizer(const String &xml, const String &bin)
+{
+    return Net::readFromModelOptimizer(xml, bin);
+}
 
 CV__DNN_EXPERIMENTAL_NS_END
 }} // namespace

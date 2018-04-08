@@ -2,6 +2,7 @@ include(CMakeParseArguments)
 
 # Debugging function
 function(ocv_cmake_dump_vars)
+  set(OPENCV_SUPPRESS_DEPRECATIONS 1)  # suppress deprecation warnings from variable_watch() guards
   get_cmake_property(__variableNames VARIABLES)
   cmake_parse_arguments(DUMP "" "TOFILE" "" ${ARGN})
   set(regex "${DUMP_UNPARSED_ARGUMENTS}")
@@ -153,6 +154,61 @@ macro(ocv_path_join result_var P1 P2_)
   #message(STATUS "'${P1}' '${P2_}' => '${${result_var}}'")
 endmacro()
 
+
+# Used to parse Android SDK 'source.properties' files
+# File lines format:
+# - '<var_name>=<value>' (with possible 'space' symbols around '=')
+# - '#<any comment>'
+# Parsed values are saved into CMake variables:
+# - '${var_prefix}_${var_name}'
+# Flags:
+# - 'CACHE_VAR <var1> <var2>' - put these properties into CMake internal cache
+# - 'MSG_PREFIX <msg>' - prefix string for emitted messages
+# - flag 'VALIDATE' - emit messages about missing values from required cached variables
+# - flag 'WARNING' - emit CMake WARNING instead of STATUS messages
+function(ocv_parse_properties_file file var_prefix)
+  cmake_parse_arguments(PARSE_PROPERTIES_PARAM "VALIDATE;WARNING" "" "CACHE_VAR;MSG_PREFIX" ${ARGN})
+
+  set(__msg_type STATUS)
+  if(PARSE_PROPERTIES_PARAM_WARNING)
+    set(__msg_type WARNING)
+  endif()
+
+  if(EXISTS "${file}")
+    set(SOURCE_PROPERTIES_REGEX "^[ ]*([^=:\n\"' ]+)[ ]*=[ ]*(.*)$")
+    file(STRINGS "${file}" SOURCE_PROPERTIES_LINES REGEX "^[ ]*[^#].*$")
+    foreach(line ${SOURCE_PROPERTIES_LINES})
+      if(line MATCHES "${SOURCE_PROPERTIES_REGEX}")
+        set(__name "${CMAKE_MATCH_1}")
+        set(__value "${CMAKE_MATCH_2}")
+        string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" __name ${__name})
+        if(";${PARSE_PROPERTIES_PARAM_CACHE_VAR};" MATCHES ";${__name};")
+          set(${var_prefix}_${__name} "${__value}" CACHE INTERNAL "from ${file}")
+        else()
+          set(${var_prefix}_${__name} "${__value}" PARENT_SCOPE)
+        endif()
+      else()
+        message(${__msg_type} "${PARSE_PROPERTIES_PARAM_MSG_PREFIX}Can't parse source property: '${line}' (from ${file})")
+      endif()
+    endforeach()
+    if(PARSE_PROPERTIES_PARAM_VALIDATE)
+      set(__missing "")
+      foreach(__name ${PARSE_PROPERTIES_PARAM_CACHE_VAR})
+        if(NOT DEFINED ${var_prefix}_${__name})
+          list(APPEND __missing ${__name})
+        endif()
+      endforeach()
+      if(__missing)
+        message(${__msg_type} "${PARSE_PROPERTIES_PARAM_MSG_PREFIX}Can't read properties '${__missing}' from '${file}'")
+      endif()
+    endif()
+  else()
+    message(${__msg_type} "${PARSE_PROPERTIES_PARAM_MSG_PREFIX}Can't find file: ${file}")
+  endif()
+endfunction()
+
+
+
 # rename modules target to world if needed
 macro(_ocv_fix_target target_var)
   if(BUILD_opencv_world)
@@ -203,7 +259,7 @@ function(ocv_include_directories)
     ocv_is_opencv_directory(__is_opencv_dir "${dir}")
     if(__is_opencv_dir)
       list(APPEND __add_before "${dir}")
-    elseif(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.0" AND
+    elseif(CV_GCC AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.0" AND
            dir MATCHES "/usr/include$")
       # workaround for GCC 6.x bug
     else()
@@ -234,7 +290,7 @@ function(ocv_target_include_directories target)
   #ocv_debug_message("ocv_target_include_directories(${target} ${ARGN})")
   _ocv_fix_target(target)
   set(__params "")
-  if(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.0" AND
+  if(CV_GCC AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.0" AND
       ";${ARGN};" MATCHES "/usr/include;")
     return() # workaround for GCC 6.x bug
   endif()
@@ -444,7 +500,7 @@ macro(ocv_warnings_disable)
           set(${var} "${${var}} ${warning}")
         endforeach()
       endforeach()
-    elseif((CMAKE_COMPILER_IS_GNUCXX OR (UNIX AND CV_ICC)) AND _gxx_warnings AND _flag_vars)
+    elseif(((CV_GCC OR CV_CLANG) OR (UNIX AND CV_ICC)) AND _gxx_warnings AND _flag_vars)
       foreach(var ${_flag_vars})
         foreach(warning ${_gxx_warnings})
           if(NOT warning MATCHES "^-Wno-")
@@ -563,6 +619,24 @@ macro(ocv_append_build_options var_prefix pkg_prefix)
     endif()
   endforeach()
 endmacro()
+
+function(ocv_append_source_files_cxx_compiler_options files_var)
+  set(__flags "${ARGN}")
+  ocv_check_flag_support(CXX "${__flags}" __HAVE_COMPILER_OPTIONS_VAR "")
+  if(${__HAVE_COMPILER_OPTIONS_VAR})
+    foreach(source ${${files_var}})
+      if("${source}" MATCHES "\\.(cpp|cc|cxx)$")
+        get_source_file_property(flags "${source}" COMPILE_FLAGS)
+        if(flags)
+          set(flags "${flags} ${__flags}")
+        else()
+          set(flags "${__flags}")
+        endif()
+        set_source_files_properties("${source}" PROPERTIES COMPILE_FLAGS "${flags}")
+      endif()
+    endforeach()
+  endif()
+endfunction()
 
 # Usage is similar to CMake 'pkg_check_modules' command
 # It additionally controls HAVE_${define} and ${define}_${modname}_FOUND variables
@@ -1002,6 +1076,18 @@ function(ocv_install_target)
   endif()
 endfunction()
 
+# ocv_install_3rdparty_licenses(<library-name> <filename1> [<filename2> ..])
+function(ocv_install_3rdparty_licenses library)
+  foreach(filename ${ARGN})
+    get_filename_component(name "${filename}" NAME)
+    install(
+      FILES "${filename}"
+      DESTINATION "${OPENCV_OTHER_INSTALL_PATH}/licenses"
+      COMPONENT licenses
+      RENAME "${library}-${name}"
+      OPTIONAL)
+  endforeach()
+endfunction()
 
 # read set of version defines from the header file
 macro(ocv_parse_header FILENAME FILE_VAR)

@@ -43,15 +43,18 @@
 #include "../precomp.hpp"
 #include "layers_common.hpp"
 #include <opencv2/dnn/shape_utils.hpp>
-#include "math_functions.hpp"
+
+#ifdef HAVE_OPENCL
+#include "../ocl4dnn/include/math_functions.hpp"
 #include "opencl_kernels_dnn.hpp"
+#endif
 
 namespace cv
 {
 namespace dnn
 {
 
-class MVNLayerImpl : public MVNLayer
+class MVNLayerImpl CV_FINAL : public MVNLayer
 {
 public:
     MVNLayerImpl(const LayerParams& params)
@@ -68,7 +71,7 @@ public:
     Mat scale, shift;
     bool fuse_batch_norm;
 
-    virtual bool tryFuse(Ptr<Layer>& top)
+    virtual bool tryFuse(Ptr<Layer>& top) CV_OVERRIDE
     {
         if (preferableTarget == DNN_TARGET_OPENCL && !fuse_batch_norm)
         {
@@ -82,7 +85,7 @@ public:
     Ptr<ReLULayer> activ_relu;
     float relu_slope;
     bool fuse_relu;
-    bool setActivation(const Ptr<ActivationLayer>& layer)
+    bool setActivation(const Ptr<ActivationLayer>& layer) CV_OVERRIDE
     {
         if (!layer.empty() && preferableTarget == DNN_TARGET_OPENCL)
         {
@@ -241,7 +244,7 @@ public:
     }
 #endif
 
-    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr)
+    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
         CV_TRACE_ARG_VALUE(name, "name", name.c_str());
@@ -253,7 +256,7 @@ public:
         Layer::forward_fallback(inputs_arr, outputs_arr, internals_arr);
     }
 
-    void forward(std::vector<Mat *> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+    void forward(std::vector<Mat *> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
         CV_TRACE_ARG_VALUE(name, "name", name.c_str());
@@ -292,7 +295,7 @@ public:
     }
 
     virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
-                           const std::vector<MatShape> &outputs) const
+                           const std::vector<MatShape> &outputs) const CV_OVERRIDE
     {
         (void)outputs; // suppress unused variable warning
         long flops = 0;
